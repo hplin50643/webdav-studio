@@ -4,7 +4,7 @@
 
 **React · TypeScript · Vite · GitHub Pages · MIT**
 
-[開啟線上工具](https://root50643.github.io/webdav-studio/) · [GitHub 專案](https://github.com/root50643/webdav-studio)
+[開啟線上工具](https://hplin50643.github.io/webdav-studio/) · [GitHub 專案](https://github.com/hplin50643/webdav-studio)
 
 ![WebDAV Studio 淺色檔案工作區](docs/screenshots/desktop-light.jpg)
 
@@ -90,7 +90,7 @@ GitHub Pages 只提供網站的靜態檔案。**WebDAV 主機需要有效 HTTPS 
 
 例如網站網址是 `https://alice.github.io/webdav-studio/`，CORS origin 是 **`https://alice.github.io`**，不包含 repository 路徑。自訂網域則填寫該網域的 origin。
 
-使用本專案的線上工具時，請允許 **`https://root50643.github.io`**。
+使用本專案的線上工具時，請允許 **`https://hplin50643.github.io`**。
 
 主機／反向代理應提供：
 
