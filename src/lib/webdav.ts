@@ -11,6 +11,8 @@ export class DavError extends Error {
     message: string,
     public status?: number,
     public detail?: string,
+    public kind?:
+      'mixed-content' | 'timeout' | 'cancelled' | 'redirect' | 'unreadable' | 'invalid-webdav',
   ) {
     super(message);
     this.name = 'DavError';
@@ -41,7 +43,12 @@ function parseXml(xml: string): XMLDocument {
     doc.documentElement.localName !== 'multistatus' ||
     doc.documentElement.namespaceURI !== 'DAV:'
   ) {
-    throw new DavError('主機回傳的 WebDAV XML 無效，可能是登入頁或服務網址不正確。');
+    throw new DavError(
+      '主機回傳的 WebDAV XML 無效，可能是登入頁或服務網址不正確。',
+      undefined,
+      undefined,
+      'invalid-webdav',
+    );
   }
   return doc;
 }
@@ -102,7 +109,12 @@ export function parseListing(xml: string, base: string, currentPath: string): Da
     if (normalized === prefix) {
       const types = props.flatMap((prop) => children(prop, 'resourcetype'));
       if (types.length && !types.some((type) => children(type, 'collection').length > 0))
-        throw new DavError('此路徑是檔案，請使用 WebDAV 資料夾網址。');
+        throw new DavError(
+          '此路徑是檔案，請使用 WebDAV 資料夾網址。',
+          undefined,
+          undefined,
+          'invalid-webdav',
+        );
       continue;
     }
     const relative = normalized.slice(prefix.length).replace(/\/$/, '');
@@ -236,6 +248,7 @@ interface Options {
   body?: string;
   signal?: AbortSignal;
   operation: string;
+  diagnoseRedirect?: boolean;
 }
 
 export class DavClient {
@@ -291,43 +304,67 @@ export class DavClient {
     consume: (response: Response, signal: AbortSignal) => Promise<T>,
   ): Promise<T> {
     const url = scopedUrl(this.base, path);
-    if (location.protocol === 'https:' && url.protocol === 'http:')
-      throw new DavError('此頁面使用 HTTPS，無法直接連線 HTTP WebDAV。請替主機啟用有效的 HTTPS。');
     const context = this.context(options.signal);
     const start = performance.now();
     let response: Response | undefined;
     let failure: DavError | undefined;
     try {
+      if (location.protocol === 'https:' && url.protocol === 'http:')
+        throw new DavError(
+          '此頁面使用 HTTPS，無法直接連線 HTTP WebDAV。請替主機啟用有效的 HTTPS。',
+          undefined,
+          undefined,
+          'mixed-content',
+        );
       response = await fetch(url, {
         method,
         headers: { ...this.authorization(), ...options.headers },
         body: options.body,
         signal: context.signal,
         credentials: 'omit',
-        redirect: 'error',
+        redirect: options.diagnoseRedirect ? 'manual' : 'error',
         cache: 'no-store',
         referrerPolicy: 'no-referrer',
       });
+      if (response.type === 'opaqueredirect')
+        throw new DavError('WebDAV 網址回傳重新導向。', undefined, undefined, 'redirect');
       if (!response.ok)
         throw new DavError(
           statusMessage(response.status),
           response.status,
-          redact(await errorSnippet(response), this.secrets),
+          await errorSnippet(response).catch(() => ''),
         );
       return await consume(response, context.signal);
     } catch (error) {
-      if (context.timedOut())
-        failure = new DavError('請求逾時。請確認主機狀態，或增加此連線的逾時秒數。');
-      else if (context.signal.aborted) failure = new DavError('操作已取消。');
+      if (context.signal.aborted && !context.timedOut())
+        failure = new DavError('操作已取消。', undefined, undefined, 'cancelled');
       else if (error instanceof DavError)
         failure = new DavError(
           redact(error.message, this.secrets),
           error.status,
           error.detail ? redact(error.detail, this.secrets) : undefined,
+          error.kind,
+        );
+      else if (context.timedOut())
+        failure = new DavError(
+          '請求逾時。請確認主機狀態，或增加此連線的逾時秒數。',
+          undefined,
+          undefined,
+          'timeout',
+        );
+      else if (response?.ok)
+        failure = new DavError(
+          '已收到 HTTP 回應，但無法讀取 WebDAV 回應內容。',
+          undefined,
+          undefined,
+          'invalid-webdav',
         );
       else
         failure = new DavError(
           '瀏覽器無法讀取主機回應。可能是網路、CORS、憑證或重新導向問題；請查看 Console／Network。',
+          undefined,
+          undefined,
+          'unreadable',
         );
       throw failure;
     } finally {
@@ -338,7 +375,7 @@ export class DavClient {
         operation: options.operation,
         method,
         url: safeUrl(url.href, this.secrets),
-        status: response?.status,
+        status: response?.status || undefined,
         durationMs: Math.round(performance.now() - start),
         level: failure
           ? context.signal.aborted && !context.timedOut()
@@ -353,11 +390,20 @@ export class DavClient {
   }
 
   async list(path = this.root, signal?: AbortSignal): Promise<DavEntry[]> {
+    return this.readDirectory(path, signal);
+  }
+
+  async testRoot(signal: AbortSignal): Promise<void> {
+    await this.readDirectory(this.root, signal, true);
+  }
+
+  private readDirectory(path: string, signal?: AbortSignal, test = false): Promise<DavEntry[]> {
     return this.request(
       'PROPFIND',
       path,
       {
-        operation: '讀取資料夾',
+        operation: test ? '測試連線' : '讀取資料夾',
+        diagnoseRedirect: test,
         body: properties,
         headers: { Depth: '1', 'Content-Type': 'application/xml; charset=utf-8' },
         signal,

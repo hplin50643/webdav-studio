@@ -1,5 +1,10 @@
 export function normalizeBase(input: string): string {
-  const url = new URL(input.trim());
+  let url: URL;
+  try {
+    url = new URL(input.trim());
+  } catch {
+    throw new Error('請輸入完整的 WebDAV 網址，例如 https://dav.example.com/files/。');
+  }
   if (!['https:', 'http:'].includes(url.protocol)) throw new Error('請使用 HTTPS 或 HTTP 網址。');
   if (url.username || url.password) throw new Error('請將帳號密碼填入專用欄位，不要放在網址中。');
   if (url.search || url.hash) throw new Error('WebDAV 根目錄網址不能包含查詢參數或片段。');

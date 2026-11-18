@@ -1952,6 +1952,59 @@ p {
   border-radius: 8px;
   line-height: 1.9;
 }
+.connection-diagnosis {
+  padding: 14px;
+  border: 1px solid color-mix(in srgb, var(--red) 24%, transparent);
+  border-radius: 8px;
+  background: var(--red-soft);
+  color: var(--text);
+  font-size: 12px;
+  line-height: 1.65;
+  overflow-wrap: anywhere;
+}
+.connection-diagnosis strong {
+  display: block;
+  margin-bottom: 4px;
+  color: var(--red);
+  font-size: 13px;
+}
+.connection-diagnosis ul {
+  margin: 8px 0;
+  padding-inline-start: 1.25em;
+}
+.connection-diagnosis dl {
+  display: grid;
+  grid-template-columns: minmax(0, max-content) minmax(0, 1fr);
+  gap: 4px 10px;
+  margin: 8px 0 0;
+}
+.connection-diagnosis dl > div {
+  display: contents;
+}
+.connection-diagnosis dd {
+  margin: 0;
+}
+.connection-diagnosis details {
+  border-top: 1px solid color-mix(in srgb, var(--red) 24%, transparent);
+  margin-top: 10px;
+  padding-top: 8px;
+}
+.connection-diagnosis summary {
+  cursor: pointer;
+  font-weight: 600;
+}
+.connection-diagnosis details p {
+  margin-top: 8px;
+}
+.connection-diagnosis pre {
+  margin: 4px 0 0;
+  padding: 8px;
+  border-radius: 6px;
+  background: var(--surface);
+  max-height: 12rem;
+  overflow: auto;
+  white-space: pre-wrap;
+}
 .modal-footer {
   display: flex;
   align-items: center;

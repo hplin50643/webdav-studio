@@ -49,6 +49,7 @@ import {
 } from 'lucide-react';
 import type { ConnectionProfile, DavEntry, RequestLog, TransferTask } from './types';
 import { DavClient } from './lib/webdav';
+import { testConnection } from './lib/connection-test';
 import { appendLog } from './lib/logger';
 import { childPath, displayPath, formatBytes, formatDate, scopedUrl } from './lib/paths';
 import {
@@ -443,21 +444,11 @@ export default function App() {
     notify('連線設定已加密保存。');
     connectProfile(profile);
   }
-  async function testProfile(profile: ConnectionProfile, signal: AbortSignal) {
+  function testProfile(profile: ConnectionProfile, signal: AbortSignal) {
     const epoch = generation.current;
-    const connection = new DavClient(profile, (log) => {
+    return testConnection(profile, signal, (log) => {
       if (epoch === generation.current) addLog(log);
     });
-    try {
-      await connection.list(connection.root, signal);
-      try {
-        await connection.options(signal);
-      } catch {
-        /* OPTIONS is advisory; PROPFIND establishes connectivity. */
-      }
-    } finally {
-      connection.abortAll();
-    }
   }
   function switchTheme() {
     const next = theme === 'dark' ? 'light' : 'dark';

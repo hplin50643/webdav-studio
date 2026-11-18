@@ -1,8 +1,83 @@
-import { useRef, useState, type FormEvent } from 'react';
+import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { Eye, EyeOff, Globe2, LoaderCircle, PlugZap, ShieldCheck } from 'lucide-react';
 import type { ConnectionProfile } from '../types';
 import { normalizeBase } from '../lib/paths';
+import type { ConnectionTestFailure } from '../lib/connection-test';
 import { InlineError, Modal } from './Modal';
+
+function ConnectionDiagnosis({ failure }: { failure: ConnectionTestFailure }) {
+  const { request, davStatus, cors } = failure;
+  const diagnosis = useRef<HTMLElement>(null);
+  useEffect(() => {
+    diagnosis.current?.scrollIntoView?.({ block: 'nearest' });
+  }, [failure]);
+  return (
+    <section ref={diagnosis} className="connection-diagnosis" aria-label="連線診斷">
+      <div role="alert">
+        <strong>連線測試失敗{request?.status ? ` · HTTP ${request.status}` : ''}</strong>
+        <p>{failure.reason}</p>
+      </div>
+      {failure.guidance.length > 0 && (
+        <ul>
+          {failure.guidance.map((item) => (
+            <li key={item}>{item}</li>
+          ))}
+        </ul>
+      )}
+      {cors && (
+        <dl>
+          <dt>允許的網站來源</dt>
+          <dd>
+            <code>{cors.origin}</code>
+          </dd>
+          <dt>允許的請求方法</dt>
+          <dd>
+            <code>PROPFIND</code>
+          </dd>
+          <dt>允許的請求標頭</dt>
+          <dd>
+            <code>{cors.headers}</code>
+          </dd>
+        </dl>
+      )}
+      {request && (
+        <details>
+          <summary>查看請求與回應細節</summary>
+          <dl>
+            <dt>請求</dt>
+            <dd>
+              <code>
+                {request.method} {request.url}
+              </code>
+            </dd>
+            <dt>耗時</dt>
+            <dd>{request.durationMs} ms</dd>
+            {davStatus !== undefined && (
+              <>
+                <dt>WebDAV 項目狀態</dt>
+                <dd>{davStatus}</dd>
+              </>
+            )}
+            {Object.entries(request.headers).map(([name, value]) => (
+              <div key={name}>
+                <dt>
+                  <code>{name}</code>
+                </dt>
+                <dd>{value}</dd>
+              </div>
+            ))}
+          </dl>
+          {request.detail && (
+            <>
+              <p>伺服器回應摘要</p>
+              <pre>{request.detail}</pre>
+            </>
+          )}
+        </details>
+      )}
+    </section>
+  );
+}
 
 export function ConnectionDialog({
   profile,
@@ -13,7 +88,10 @@ export function ConnectionDialog({
   profile?: ConnectionProfile;
   onClose: () => void;
   onSave: (profile: ConnectionProfile) => Promise<void>;
-  onTest: (profile: ConnectionProfile, signal: AbortSignal) => Promise<void>;
+  onTest: (
+    profile: ConnectionProfile,
+    signal: AbortSignal,
+  ) => Promise<ConnectionTestFailure | undefined>;
 }) {
   const [draft, setDraft] = useState<ConnectionProfile>(
     profile ?? {
@@ -29,11 +107,13 @@ export function ConnectionDialog({
   const [visible, setVisible] = useState(false);
   const [busy, setBusy] = useState<'save' | 'test'>();
   const [error, setError] = useState('');
+  const [failure, setFailure] = useState<ConnectionTestFailure>();
   const [result, setResult] = useState('');
   const testController = useRef<AbortController | null>(null);
   function update<K extends keyof ConnectionProfile>(key: K, value: ConnectionProfile[K]) {
     setDraft((old) => ({ ...old, [key]: value }));
     setError('');
+    setFailure(undefined);
     setResult('');
   }
   function validated(): ConnectionProfile {
@@ -52,6 +132,7 @@ export function ConnectionDialog({
   async function submit(event: FormEvent) {
     event.preventDefault();
     setError('');
+    setFailure(undefined);
     setBusy('save');
     try {
       await onSave(validated());
@@ -63,13 +144,17 @@ export function ConnectionDialog({
   }
   async function test() {
     setError('');
+    setFailure(undefined);
     setResult('');
     setBusy('test');
     try {
       const value = validated();
       testController.current = new AbortController();
-      await onTest(value, testController.current.signal);
-      setResult('連線成功！已讀取根目錄，詳細請求可在除錯面板查看。');
+      const signal = testController.current.signal;
+      const failure = await onTest(value, signal);
+      if (signal.aborted) return;
+      if (failure) setFailure(failure);
+      else setResult('連線成功！已讀取根目錄，詳細請求可在除錯面板查看。');
     } catch (error) {
       setError(error instanceof Error ? error.message : '連線失敗。');
     } finally {
@@ -187,6 +272,7 @@ export function ConnectionDialog({
           <span>帳號與密碼會以主密碼加密，僅保存在這個瀏覽器。</span>
         </div>
         <InlineError message={error} />
+        {failure && <ConnectionDiagnosis failure={failure} />}
         {result && (
           <div className="inline-success" role="status">
             {result}
